@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HSV Curve Palette Generator</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+    <div class="container">
+        <div class="controls">
+            <h2>Settings</h2>
+            
+            <h3>Base Color</h3>
+            <div class="control-group">
+                <label>Hue: <span id="valHue">210</span>°</label>
+                <input type="range" id="baseH" min="0" max="360" value="210">
+            </div>
+            <div class="control-group">
+                <label>Base Saturation: <span id="valSat">0.50</span></label>
+                <input type="range" id="baseS" min="0" max="1" step="0.01" value="0.5">
+            </div>
+            <div class="control-group">
+                <label>Base Value: <span id="valVal">0.50</span></label>
+                <input type="range" id="baseV" min="0" max="1" step="0.01" value="0.5">
+            </div>
+
+            <hr>
+
+            <h3>Shifts</h3>
+            <div class="control-group">
+                <label>Hue Shift (Warmer/Colder)</label>
+                <input type="number" id="hueShift" value="-15">
+            </div>
+            <div class="control-group">
+                <label>Value Step (X-axis gap)</label>
+                <input type="number" id="valueStep" step="0.01" value="0.15">
+            </div>
+
+            <hr>
+
+            <h3>Curve Function</h3>
+            <div class="control-group" style="flex-direction: row; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                <input type="checkbox" id="useCustom" style="width: auto; cursor: pointer;">
+                <label for="useCustom" style="cursor: pointer;">Use Custom Formula</label>
+            </div>
+
+            <div id="quadraticGroup" style="display: flex; flex-direction: column; gap: 1rem;">
+                <div class="control-group">
+                    <label>Parameter A (y = Ax² + Bx + C)</label>
+                    <input type="number" id="curveA" step="0.1" value="-2">
+                </div>
+                <div class="control-group">
+                    <label>Parameter B</label>
+                    <input type="number" id="curveB" step="0.1" value="2">
+                </div>
+                <div class="control-group">
+                    <label>Parameter C</label>
+                    <input type="number" id="curveC" step="0.1" value="0.2">
+                </div>
+            </div>
+
+            <div id="customFormulaGroup" style="display: none; flex-direction: column; gap: 1rem;">
+                <div class="control-group">
+                    <label>Custom Formula (y = ...)</label>
+                    <input type="text" id="customFormula" value="sin(x * PI) * 0.8 + 0.1">
+                    <small style="color: #a6adc8; font-size: 0.75rem; margin-top: 0.25rem;">
+                        Use <code>x</code> as the Value input (0 to 1). <br>
+                        Valid JS Math allowed (e.g., <code>sin(x)</code>, <code>pow(x, 2)</code>, <code>PI</code>).
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="preview">
+            <canvas id="colorCanvas" width="400" height="800"></canvas>
+            
+            <div class="palette-display" id="paletteDisplay">
+                </div>
+        </div>
+    </div>
+    </body>
+</html>
+
+  <script>
+    class PaletteGenerator {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.ctx = canvas.getContext('2d');
+            this.width = canvas.width; 
+        }
+
+        hsvToRgb(h, s, v) {
+            let r, g, b;
+            const i = Math.floor(h / 60);
+            const f = h / 60 - i;
+            const p = v * (1 - s);
+            const q = v * (1 - f * s);
+            const t = v * (1 - (1 - f) * s);
+
+            switch (i % 6) {
+                case 0: r = v, g = t, b = p; break;
+                case 1: r = q, g = v, b = p; break;
+                case 2: r = p, g = v, b = t; break;
+                case 3: r = p, g = q, b = v; break;
+                case 4: r = t, g = p, b = v; break;
+                case 5: r = v, g = p, b = q; break;
+            }
+            return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+        }
+
+        rgbToHex(r, g, b) {
+            return "#" + [r, g, b].map(x => {
+                const hex = x.toString(16);
+                return hex.length === 1 ? "0" + hex : hex;
+            }).join('');
+        }
+
+        // Helper to calculate Saturation based on the chosen formula mode
+        calculateSaturation(x, config) {
+            let y = 0;
+            if (config.useCustom && config.customFn) {
+                try {
+                    y = config.customFn(x);
+                } catch(e) {
+                    y = 0; // Fallback if math fails temporarily during typing
+                }
+            } else {
+                y = (config.curveA * Math.pow(x, 2)) + (config.curveB * x) + config.curveC;
+            }
+            // Clamp output between 0 and 1
+            return Math.max(0, Math.min(1, y));
+        }
+
+        generate(config) {
+            const { baseHsv, hueShift, valueStep } = config;
+            const palette = [];
+            
+            for (let i = -2; i <= 2; i++) {
+                let v = baseHsv.v + (i * valueStep);
+                v = Math.max(0, Math.min(1, v));
+
+                let s = this.calculateSaturation(v, config);
+
+                let h = baseHsv.h + (i * hueShift);
+                h = (h % 360 + 360) % 360;
+
+                const rgb = this.hsvToRgb(h, s, v);
+                const hex = this.rgbToHex(...rgb);
+                palette.push({ h, s, v, hex });
+            }
+
+            this.renderVisualization(baseHsv.h, palette, config);
+            return palette;
+        }
+
+        renderVisualization(baseHue, palette, config) {
+            this.canvas.height = 800; 
+            this.height = this.canvas.height;
+            
+            this.ctx.clearRect(0, 0, this.width, this.height);
+            
+            const pad = 60; 
+            const w = this.width - pad * 2;
+            const hHalf = 300; 
+
+            // ==========================================
+            // 1. TOP VISUALIZATION: TRIANGLE
+            // ==========================================
+            const mapX_tri = (sat) => pad + (sat * w); 
+            const mapY_tri = (val) => pad + (val * hHalf);
+
+            for (let x = 0; x <= w; x += 2) {
+                for (let y = 0; y <= hHalf; y += 2) {
+                    const sat = x / w; 
+                    const val = y / hHalf; 
+                    
+                    if (sat <= val) {
+                        const rgb = this.hsvToRgb(baseHue, sat, val);
+                        this.ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+                        this.ctx.fillRect(pad + x, pad + y, 2, 2);
+                    }
+                }
+            }
+
+            this.ctx.strokeStyle = '#333';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(pad, pad); 
+            this.ctx.lineTo(pad, pad + hHalf); 
+            this.ctx.lineTo(pad + w, pad + hHalf); 
+            this.ctx.closePath();
+            this.ctx.stroke();
+
+            palette.forEach((color, index) => {
+                const px = mapX_tri(color.s);
+                const py = mapY_tri(color.v);
+                
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 6, 0, Math.PI * 2);
+                this.ctx.fillStyle = color.hex;
+                this.ctx.fill();
+                this.ctx.lineWidth = 2;
+                this.ctx.strokeStyle = index === 2 ? '#FFD700' : '#FFF'; 
+                this.ctx.stroke();
+            });
+
+            this.ctx.fillStyle = '#FFF';
+            this.ctx.font = '12px Arial';
+            this.ctx.fillText("Black (V=0)", pad - 10, pad - 10);
+            this.ctx.fillText("White (V=1, S=0)", pad - 20, pad + hHalf + 20);
+            this.ctx.fillText("S=1", pad + w - 10, pad + hHalf + 20);
+
+            // ==========================================
+            // 2. BOTTOM VISUALIZATION: SQUARE GRAPH
+            // ==========================================
+            const yOffset = 420; 
+            
+            const mapX_sq = (val) => pad + (val * w); 
+            const mapY_sq = (sat) => yOffset + hHalf - (sat * hHalf);
+
+            for (let x = 0; x <= w; x += 2) {
+                for (let y = 0; y <= hHalf; y += 2) {
+                    const val = x / w; 
+                    const sat = 1 - (y / hHalf); 
+                    
+                    const rgb = this.hsvToRgb(baseHue, sat, val);
+                    this.ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+                    this.ctx.fillRect(pad + x, yOffset + y, 2, 2);
+                }
+            }
+
+            this.ctx.strokeStyle = '#333';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(pad, yOffset, w, hHalf);
+
+            this.ctx.strokeStyle = 'white';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.beginPath();
+            
+            for (let val = 0; val <= 1; val += 0.01) {
+                let sat = this.calculateSaturation(val, config);
+                
+                const px = mapX_sq(val);
+                const py = mapY_sq(sat);
+                
+                if (val === 0) this.ctx.moveTo(px, py);
+                else this.ctx.lineTo(px, py);
+            }
+            this.ctx.stroke();
+            this.ctx.setLineDash([]); 
+
+            palette.forEach((color, index) => {
+                const px = mapX_sq(color.v);
+                const py = mapY_sq(color.s);
+                
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 6, 0, Math.PI * 2);
+                this.ctx.fillStyle = color.hex;
+                this.ctx.fill();
+                this.ctx.lineWidth = 2;
+                this.ctx.strokeStyle = index === 2 ? '#FFD700' : '#FFF'; 
+                this.ctx.stroke();
+            });
+
+            this.ctx.fillStyle = '#FFF';
+            this.ctx.font = '12px Arial';
+            this.ctx.fillText("0,0", pad - 20, yOffset + hHalf + 20); 
+            this.ctx.fillText("1,1", pad + w - 10, yOffset - 10); 
+            
+            this.ctx.fillText("Value (X-Axis) →", pad + w / 2 - 40, yOffset + hHalf + 35);
+            
+            this.ctx.save();
+            this.ctx.translate(pad - 35, yOffset + hHalf / 2 + 45);
+            this.ctx.rotate(-Math.PI / 2);
+            this.ctx.fillText("Saturation (Y-Axis) →", 0, 0);
+            this.ctx.restore();
+        }
+    }
+
+    // App Initialization and Event Binding
+    const canvas = document.getElementById('colorCanvas');
+    const generator = new PaletteGenerator(canvas);
+    const paletteContainer = document.getElementById('paletteDisplay');
+
+    // All input triggers
+    const inputs = [
+        'baseH', 'baseS', 'baseV', 
+        'hueShift', 'valueStep', 
+        'curveA', 'curveB', 'curveC',
+        'useCustom', 'customFormula'
+    ].map(id => document.getElementById(id));
+
+    const displays = {
+        baseH: document.getElementById('valHue'),
+        baseS: document.getElementById('valSat'),
+        baseV: document.getElementById('valVal')
+    };
+
+    function update() {
+        if(displays.baseH) displays.baseH.innerText = inputs[0].value;
+        if(displays.baseS) displays.baseS.innerText = parseFloat(inputs[1].value).toFixed(2);
+        if(displays.baseV) displays.baseV.innerText = parseFloat(inputs[2].value).toFixed(2);
+
+        const useCustom = inputs[8].checked;
+        const customFormulaStr = inputs[9].value;
+
+        // Toggle UI Panes
+        document.getElementById('customFormulaGroup').style.display = useCustom ? 'flex' : 'none';
+        document.getElementById('quadraticGroup').style.display = useCustom ? 'none' : 'flex';
+
+        // Attempt to parse custom function safely
+        let customFn = null;
+        if (useCustom) {
+            try {
+                // with(Math) exposes math properties directly (e.g. sin instead of Math.sin)
+                customFn = new Function('x', `
+                    try {
+                        with(Math) { return ${customFormulaStr}; }
+                    } catch(e) { return 0; }
+                `);
+            } catch (e) {
+                console.warn("Invalid JS expression");
+            }
+        }
+
+        const settings = {
+            baseHsv: { 
+                h: parseFloat(inputs[0].value), 
+                s: parseFloat(inputs[1].value), 
+                v: parseFloat(inputs[2].value) 
+            },
+            hueShift: parseFloat(inputs[3].value),
+            valueStep: parseFloat(inputs[4].value),
+            curveA: parseFloat(inputs[5].value),
+            curveB: parseFloat(inputs[6].value),
+            curveC: parseFloat(inputs[7].value),
+            useCustom: useCustom,
+            customFn: customFn
+        };
+
+        const palette = generator.generate(settings);
+
+        paletteContainer.innerHTML = '';
+        palette.forEach(color => {
+            const div = document.createElement('div');
+            div.className = 'color-box';
+            div.style.backgroundColor = color.hex;
+            div.innerText = color.hex.toUpperCase();
+            paletteContainer.appendChild(div);
+        });
+    }
+
+    // Attach listeners to update dynamically on input and keystrokes
+    inputs.forEach(input => {
+        if(input.type === 'checkbox') {
+            input.addEventListener('change', update);
+        } else {
+            input.addEventListener('input', update);
+        }
+    });
+
+    update();
+</script>
+</body>
+</html>
