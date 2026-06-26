@@ -1,6 +1,7 @@
 Side-project and heavily vibe-coded in an hour to help with grasping javascript math and functionality while also recalling html basics for my new semester
 
-Access the site at here ( https://wulfyihh.github.io/FormulaicPalletteGenerator/ )
+Access the site at [here](https://chai-kra.github.io/FormulaicPalletteGenerator/)
+or here for the copy pasting gang ( https://chai-kra.github.io/FormulaicPalletteGenerator/ )
 
 Don't actually use this, it's buggy and not very clear in terms of presentation. While it does still show the *relative* position of the colour on a 1x1 grid, the hue is different and isn't properly represented in the web app. And I'm not sure how to properly represent that without having to render seperate grids with that different hue shift
 
